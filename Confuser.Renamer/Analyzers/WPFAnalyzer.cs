@@ -17,7 +17,7 @@ namespace Confuser.Renamer.Analyzers {
 		static readonly object BAMLKey = new object();
 
 		static readonly Regex ResourceNamePattern = new Regex("^.*\\.g\\.resources$");
-		internal static readonly Regex UriPattern = new Regex(";COMPONENT/(.+\\.[BX]AML)$");
+		internal static readonly Regex UriPattern = new Regex("(?:;COMPONENT|APPLICATION\\:,,,)(/.+\\.[BX]AML)$");
 		BAMLAnalyzer analyzer;
 
 		internal Dictionary<string, List<IBAMLReference>> bamlRefs = new Dictionary<string, List<IBAMLReference>>(StringComparer.OrdinalIgnoreCase);
@@ -51,10 +51,37 @@ namespace Confuser.Renamer.Analyzers {
 					List<IBAMLReference> references;
 					if (bamlRefs.TryGetValue(doc.DocumentName, out references)) {
 						var newName = doc.DocumentName.ToUpperInvariant();
+
+						#region old code
+
+						//if (newName.EndsWith(".BAML"))
+						//    newName = service.RandomName(RenameMode.Letters).ToLowerInvariant() + ".baml";
+						//else if (newName.EndsWith(".XAML"))
+						//    newName = service.RandomName(RenameMode.Letters).ToLowerInvariant() + ".xaml";
+
+						#endregion
+
+						#region Niks patch fix
+
+						/*
+                         * Nik's patch for maintaining relative paths. If the xaml file is referenced in this manner
+                         * "/some.namespace;component/somefolder/somecontrol.xaml"
+                         * then we want to keep the relative path and namespace intact. We should be obfuscating it like this - /some.namespace;component/somefolder/asjdjh2398498dswk.xaml
+                        * */
+
+						string[] completePath = newName.Split(new string[] { "/" }, StringSplitOptions.RemoveEmptyEntries);
+						string newShinyName = string.Empty;
+						for (int i = 0; i <= completePath.Length - 2; i++) {
+							newShinyName += completePath[i].ToLowerInvariant() + "/";
+						}
 						if (newName.EndsWith(".BAML"))
-							newName = service.RandomName(RenameMode.Letters).ToLowerInvariant() + ".baml";
+							newName = newShinyName + service.RandomName(RenameMode.Letters).ToLowerInvariant() + ".baml";
 						else if (newName.EndsWith(".XAML"))
-							newName = service.RandomName(RenameMode.Letters).ToLowerInvariant() + ".xaml";
+							newName = newShinyName + service.RandomName(RenameMode.Letters).ToLowerInvariant() + ".xaml";
+
+						context.Logger.Debug(String.Format("Preserving virtual paths. Replaced {0} with {1}", doc.DocumentName, newName));
+
+						#endregion
 
 						bool renameOk = true;
 						foreach (var bamlRef in references)
@@ -139,6 +166,8 @@ namespace Confuser.Renamer.Analyzers {
 						var match = UriPattern.Match(operand);
 						if (match.Success)
 							operand = match.Groups[1].Value;
+						else if (operand.Contains("/"))
+							context.Logger.WarnFormat("Fail to extract XAML name from '{0}'.", instr.Operand);
 
 						var reference = new BAMLStringReference(instr);
 						operand = operand.TrimStart('/');

@@ -104,8 +104,12 @@ namespace Confuser.Renamer {
 				Analyze(service, context, parameters, (PropertyDef)def);
 			else if (def is EventDef)
 				Analyze(service, context, parameters, (EventDef)def);
-			else if (def is ModuleDef)
+			else if (def is ModuleDef) {
+				var pass = parameters.GetParameter<string>(context, def, "password", null);
+				if (pass != null)
+					service.reversibleRenamer = new ReversibleRenamer(pass);
 				service.SetCanRename(def, false);
+			}
 
 			if (!runAnalyzer || parameters.GetParameter(context, def, "forceRen", false))
 				return;
@@ -114,8 +118,20 @@ namespace Confuser.Renamer {
 				renamer.Analyze(context, service, parameters, def);
 		}
 
+		static bool IsVisibleOutside(ConfuserContext context, ProtectionParameters parameters, IMemberDef def) {
+			var type = def as TypeDef;
+			if (type == null)
+				type = def.DeclaringType;
+
+			var renPublic = parameters.GetParameter<bool?>(context, def, "renPublic", null);
+			if (renPublic == null)
+				return type.IsVisibleOutside();
+			else
+				return type.IsVisibleOutside(false) && !renPublic.Value;
+		}
+
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, TypeDef type) {
-			if (type.IsVisibleOutside() && !parameters.GetParameter(context, type, "renPublic", false)) {
+			if (IsVisibleOutside(context, parameters, type)) {
 				service.SetCanRename(type, false);
 			}
 			else if (type.IsRuntimeSpecialName || type.IsGlobalModuleType) {
@@ -141,7 +157,7 @@ namespace Confuser.Renamer {
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, MethodDef method) {
 			if (method.DeclaringType.IsVisibleOutside() &&
 			    (method.IsFamily || method.IsFamilyOrAssembly || method.IsPublic) &&
-			    !parameters.GetParameter(context, method, "renPublic", false))
+			    IsVisibleOutside(context, parameters, method))
 				service.SetCanRename(method, false);
 
 			else if (method.IsRuntimeSpecialName)
@@ -160,7 +176,7 @@ namespace Confuser.Renamer {
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, FieldDef field) {
 			if (field.DeclaringType.IsVisibleOutside() &&
 			    (field.IsFamily || field.IsFamilyOrAssembly || field.IsPublic) &&
-			    !parameters.GetParameter(context, field, "renPublic", false))
+			    IsVisibleOutside(context, parameters, field))
 				service.SetCanRename(field, false);
 
 			else if (field.IsRuntimeSpecialName)
@@ -172,13 +188,14 @@ namespace Confuser.Renamer {
 			else if (field.DeclaringType.IsSerializable && !field.IsNotSerialized)
 				service.SetCanRename(field, false);
 
-			else if (field.IsLiteral && field.DeclaringType.IsEnum)
+			else if (field.IsLiteral && field.DeclaringType.IsEnum &&
+				!parameters.GetParameter(context, field, "renEnum", false))
 				service.SetCanRename(field, false);
 		}
 
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, PropertyDef property) {
 			if (property.DeclaringType.IsVisibleOutside() &&
-			    !parameters.GetParameter(context, property, "renPublic", false))
+			    IsVisibleOutside(context, parameters, property))
 				service.SetCanRename(property, false);
 
 			else if (property.IsRuntimeSpecialName)
@@ -196,7 +213,7 @@ namespace Confuser.Renamer {
 
 		void Analyze(NameService service, ConfuserContext context, ProtectionParameters parameters, EventDef evt) {
 			if (evt.DeclaringType.IsVisibleOutside() &&
-			    !parameters.GetParameter(context, evt, "renPublic", false))
+			    IsVisibleOutside(context, parameters, evt))
 				service.SetCanRename(evt, false);
 
 			else if (evt.IsRuntimeSpecialName)
